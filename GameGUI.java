@@ -10,8 +10,6 @@ public class GameGUI extends JFrame {
     private static final Color BG = new Color(0x1B4332);
     private static final Color CARD_BG = Color.WHITE;
     private static final Color CARD_BACK = new Color(0x1565C0);
-    private static final Color RED_SUIT = new Color(0xC62828);
-    private static final Color BLACK_SUIT = new Color(0x1A1A2E);
     private static final Color GOLD = new Color(0xFFD700);
     private static final Color MSG_BG = new Color(0x081C15);
     private static final Color LOG_BG = new Color(0x081C15);
@@ -20,6 +18,8 @@ public class GameGUI extends JFrame {
     private GameEngine engine;
     private Difficulty difficulty = Difficulty.MEDIUM;
     private GameState.Turn trickLeader;
+
+    private boolean interactionLocked = false;
 
     private JLabel scoreLabel;
     private JPanel cpuHandPanel;
@@ -45,6 +45,8 @@ public class GameGUI extends JFrame {
         buildUI();
         showDifficultyDialog();
     }
+
+
 
     private void buildUI() {
         add(buildScoreBar(), BorderLayout.NORTH);
@@ -110,21 +112,18 @@ public class GameGUI extends JFrame {
         g.insets = new Insets(6, 20, 6, 20);
 
         cpuCardLabel = cardSlotLabel("CPU");
-        g.gridx = 0;
-        g.gridy = 0;
+        g.gridx = 0; g.gridy = 0;
         table.add(cpuCardLabel, g);
 
         messageLabel = new JLabel("Press New Game to start", JLabel.CENTER);
         messageLabel.setForeground(Color.WHITE);
         messageLabel.setFont(new Font("Monospaced", Font.PLAIN, 13));
         messageLabel.setPreferredSize(new Dimension(320, 80));
-        g.gridx = 1;
-        g.weightx = 1;
+        g.gridx = 1; g.weightx = 1;
         table.add(messageLabel, g);
 
         playerCardLabel = cardSlotLabel("YOU");
-        g.gridx = 2;
-        g.weightx = 0;
+        g.gridx = 2; g.weightx = 0;
         table.add(playerCardLabel, g);
 
         return table;
@@ -150,33 +149,33 @@ public class GameGUI extends JFrame {
                 "Choose difficulty:", "New Game",
                 JOptionPane.DEFAULT_OPTION, JOptionPane.QUESTION_MESSAGE,
                 null, opts, opts[1]);
-        if (choice < 0)
-            choice = 1;
+        if (choice < 0) choice = 1;
         difficulty = Difficulty.values()[choice];
         startNewGame();
     }
 
     private void startNewGame() {
+        interactionLocked = false;
+
         Deck deck = new Deck();
         deck.shuffle();
         List<Card> pHand = deck.deal(10);
         List<Card> cHand = deck.deal(10);
         GameState.Turn first = new Random().nextBoolean()
-                ? GameState.Turn.PLAYER
-                : GameState.Turn.COMPUTER;
+                ? GameState.Turn.PLAYER : GameState.Turn.COMPUTER;
 
-        state = new GameState(pHand, cHand, first);
+        state  = new GameState(pHand, cHand, first);
         engine = new GameEngine(state, new AIEngine(difficulty));
+        trickLeader = first;
 
         logArea.setText("");
         clearTableCards();
         updateScore();
 
         if (first == GameState.Turn.COMPUTER) {
+            interactionLocked = true;
             setMessage("CPU leads first — watch the CPU play.");
-            javax.swing.Timer t = new javax.swing.Timer(700, e -> doCpuLead());
-            t.setRepeats(false);
-            t.start();
+            delay(700, e -> doCpuLead());
         } else {
             setMessage("You lead! Click a card to play.");
             refreshPlayerHand(true);
@@ -185,133 +184,169 @@ public class GameGUI extends JFrame {
     }
 
     private void doCpuLead() {
-        trickLeader = GameState.Turn.COMPUTER;
-        Card cpuCard = engine.computerLead();
-        showCpuCard(cpuCard);
+        if (state.isGameOver()) { endGame(); return; }
 
-        boolean mustFollow = state.playerHand.stream()
-                .anyMatch(c -> c.getSuit() == cpuCard.getSuit());
-        String hint = mustFollow
-                ? "You must follow suit: " + suitSymbol(cpuCard.getSuit())
-                : "You have no " + suitSymbol(cpuCard.getSuit()) + " — play anything";
-        setMessage("CPU played " + cpuCard + ".  " + hint);
+        try {
+            trickLeader = GameState.Turn.COMPUTER;
+            Card cpuCard = engine.computerLead();
+            showCpuCard(cpuCard);
 
-        refreshPlayerHand(true);
+            boolean mustFollow = state.playerHand.stream()
+                    .anyMatch(c -> c.getSuit() == cpuCard.getSuit());
+            String hint = mustFollow
+                    ? "You must follow suit: " + suitSymbol(cpuCard.getSuit())
+                    : "No " + suitSymbol(cpuCard.getSuit()) + " — play anything";
+            setMessage("CPU played " + cpuCard + ".  " + hint);
+
+            interactionLocked = false; 
+            refreshPlayerHand(true);
+
+        } catch (Exception ex) {
+            appendLog("[CPU lead error: " + ex.getMessage() + "]");
+            interactionLocked = true;
+            setMessage("Something went wrong — please start a New Game.");
+        }
     }
 
+  
     private void doCpuRespond(Card playerLead) {
-        Card cpuCard = engine.computerRespond(playerLead);
-        showCpuCard(cpuCard);
-        setMessage("CPU responds with " + cpuCard + ". Resolving...");
-        refreshCpuHand();
 
-        javax.swing.Timer t = new javax.swing.Timer(900, e -> finishTrick());
-        t.setRepeats(false);
-        t.start();
-    }
-
-    private void onPlayerCardClick(Card card) {
-        if (state.isGameOver())
-            return;
-
-        if (trickLeader == GameState.Turn.PLAYER) {
-
-            engine.playerLead(card);
-            showPlayerCard(card);
-            setMessage("You played " + card + ". Waiting for CPU...");
-            refreshPlayerHand(false);
+        try {
+            Card cpuCard = engine.computerRespond(playerLead);
+            showCpuCard(cpuCard);
+            setMessage("CPU responds with " + cpuCard + ". Resolving…");
             refreshCpuHand();
 
-            javax.swing.Timer t = new javax.swing.Timer(700, e -> doCpuRespond(card));
-            t.setRepeats(false);
-            t.start();
+            delay(900, e -> finishTrick());
 
-        } else {
-
-            Card lead = state.computerPlayed;
-            if (!engine.isLegalPlay(card, lead)) {
-                setMessage("Must follow suit: " + suitSymbol(lead.getSuit()) + "  — pick another card.");
-                return;
-            }
-            engine.playerRespond(card);
-            showPlayerCard(card);
-            setMessage("You played " + card + ". Resolving...");
-            refreshPlayerHand(false);
-
-            javax.swing.Timer t = new javax.swing.Timer(700, e -> finishTrick());
-            t.setRepeats(false);
-            t.start();
+        } catch (Exception ex) {
+            appendLog("[CPU respond error: " + ex.getMessage() + "]");
+            interactionLocked = true;
+            setMessage("Something went wrong — please start a New Game.");
         }
     }
 
-    private void finishTrick() {
-        String result = engine.resolveTrick(trickLeader);
-        appendLog(result);
-        updateScore();
-        refreshCpuHand();
+  
+    private void onPlayerCardClick(Card card) {
+        if (interactionLocked) return;
+        if (state == null) return;
+        if (state.isGameOver() && state.playerPlayed == null && state.computerPlayed == null) return;
 
-        if (state.isGameOver()) {
-            endGame();
-            return;
+        try {
+            if (trickLeader == GameState.Turn.PLAYER) {
+                interactionLocked = true;
+                engine.playerLead(card);
+                showPlayerCard(card);
+                setMessage("You played " + card + ". Waiting for CPU…");
+                refreshPlayerHand(false);
+                refreshCpuHand();
+
+                delay(700, e -> doCpuRespond(card));
+
+            } else {
+                Card lead = state.computerPlayed;
+                if (lead == null) {
+                    return;
+                }
+
+                if (!engine.isLegalPlay(card, lead)) {
+                    setMessage("Must follow suit: " + suitSymbol(lead.getSuit())
+                            + "  — pick another card.");
+                    return;
+                }
+
+                interactionLocked = true;
+                engine.playerRespond(card);
+                showPlayerCard(card);
+                setMessage("You played " + card + ". Resolving…");
+                refreshPlayerHand(false);
+
+                delay(700, e -> finishTrick());
+            }
+
+        } catch (Exception ex) {
+            appendLog("[Play error: " + ex.getMessage() + "]");
+            interactionLocked = false;
+            refreshPlayerHand(true); 
         }
+    }
+    private void finishTrick() {
+        try {
+            String result = engine.resolveTrick(trickLeader);
+            appendLog(result);
+            updateScore();
+            refreshCpuHand();
+            refreshPlayerHand(false); 
 
-        javax.swing.Timer t = new javax.swing.Timer(1200, e -> startNextTrick());
-        t.setRepeats(false);
-        t.start();
+            if (state.isGameOver()) {
+                endGame();
+                return;
+            }
+
+            delay(1200, e -> startNextTrick());
+
+        } catch (Exception ex) {
+            appendLog("[Resolve error: " + ex.getMessage() + "]");
+            interactionLocked = true;
+            setMessage("Something went wrong — please start a New Game.");
+        }
     }
 
     private void startNextTrick() {
+      
+        if (state.isGameOver()) { endGame(); return; }
+
         clearTableCards();
         trickLeader = state.currentTurn;
 
         if (trickLeader == GameState.Turn.COMPUTER) {
-            setMessage("CPU leads this round...");
-            javax.swing.Timer t = new javax.swing.Timer(600, e -> doCpuLead());
-            t.setRepeats(false);
-            t.start();
+            if (state.computerHand.isEmpty()) { endGame(); return; }
+
+            interactionLocked = true;
+            setMessage("CPU leads this round…");
+            delay(600, e -> doCpuLead());
         } else {
-            setMessage("You lead! Click a card.");
+            if (state.playerHand.isEmpty()) { endGame(); return; }
+
+            interactionLocked = false;
+            setMessage("Your turn! Click a card to lead.");
+            refreshCpuHand();
             refreshPlayerHand(true);
         }
     }
 
     private void endGame() {
-        String winner = state.getWinner() == GameState.Turn.PLAYER ? "YOU WIN! 🎉" : "CPU wins.";
-        setMessage("<html><b>" + winner + "</b>  You: " + state.playerTricks
+        interactionLocked = true;
+        GameState.Turn winner = state.getWinner();
+        String winnerStr = (winner == GameState.Turn.PLAYER) ? "YOU WIN! 🎉" : "CPU wins.";
+        setMessage("<html><b>" + winnerStr + "</b>  You: " + state.playerTricks
                 + " tricks   CPU: " + state.computerTricks + " tricks</html>");
         refreshPlayerHand(false);
-        appendLog("=== GAME OVER — " + winner + " ===");
+        appendLog("=== GAME OVER — " + winnerStr + " ===");
     }
+
 
     private void refreshPlayerHand(boolean clickable) {
         playerHandPanel.removeAll();
         Card cpuLead = (trickLeader == GameState.Turn.COMPUTER) ? state.computerPlayed : null;
 
         for (Card card : state.playerHand) {
-            JLabel lbl = buildCardLabel(card, false);
+            JLabel lbl = buildCardLabel(card);
 
             if (clickable) {
-                boolean legal = cpuLead == null || engine.isLegalPlay(card, cpuLead);
+                boolean legal = (cpuLead == null) || engine.isLegalPlay(card, cpuLead);
                 lbl.setEnabled(legal);
-                if (!legal)
-                    lbl.setOpaque(true);
 
                 lbl.addMouseListener(new MouseAdapter() {
-                    @Override
-                    public void mouseEntered(MouseEvent e) {
-                        if (lbl.isEnabled())
+                    @Override public void mouseEntered(MouseEvent e) {
+                        if (lbl.isEnabled() && !interactionLocked)
                             lbl.setBorder(BorderFactory.createLineBorder(GOLD, 2));
                     }
-
-                    @Override
-                    public void mouseExited(MouseEvent e) {
+                    @Override public void mouseExited(MouseEvent e) {
                         lbl.setBorder(cardBorder());
                     }
-
-                    @Override
-                    public void mouseClicked(MouseEvent e) {
-                        if (lbl.isEnabled())
-                            onPlayerCardClick(card);
+                    @Override public void mouseClicked(MouseEvent e) {
+                        if (lbl.isEnabled()) onPlayerCardClick(card);
                     }
                 });
             }
@@ -340,18 +375,21 @@ public class GameGUI extends JFrame {
     }
 
     private void clearTableCards() {
-        cpuCardLabel.setText("<html><center><font color='#555'>CPU<br>card</font></center></html>");
-        cpuCardLabel.setBorder(BorderFactory.createDashedBorder(new Color(0x444444), 2, 4, 2, false));
-        playerCardLabel.setText("<html><center><font color='#555'>Your<br>card</font></center></html>");
-        playerCardLabel.setBorder(BorderFactory.createDashedBorder(new Color(0x444444), 2, 4, 2, false));
+        cpuCardLabel.setText(
+                "<html><center><font color='#555'>CPU<br>card</font></center></html>");
+        cpuCardLabel.setBorder(
+                BorderFactory.createDashedBorder(new Color(0x444444), 2, 4, 2, false));
+        playerCardLabel.setText(
+                "<html><center><font color='#555'>Your<br>card</font></center></html>");
+        playerCardLabel.setBorder(
+                BorderFactory.createDashedBorder(new Color(0x444444), 2, 4, 2, false));
     }
 
     private void updateScore() {
-        scoreLabel.setText(
-                "Round " + state.round +
-                        "  |  You: " + state.playerTricks + " tricks" +
-                        "   CPU: " + state.computerTricks + " tricks" +
-                        "   [" + difficulty + "]");
+        scoreLabel.setText("Round " + state.round
+                + "  |  You: " + state.playerTricks + " tricks"
+                + "   CPU: " + state.computerTricks + " tricks"
+                + "   [" + difficulty + "]");
     }
 
     private void setMessage(String msg) {
@@ -363,7 +401,14 @@ public class GameGUI extends JFrame {
         logArea.setCaretPosition(logArea.getDocument().getLength());
     }
 
-    private JLabel buildCardLabel(Card card, boolean disabled) {
+    private void delay(int ms, java.awt.event.ActionListener action) {
+        javax.swing.Timer t = new javax.swing.Timer(ms, action);
+        t.setRepeats(false);
+        t.start();
+    }
+
+
+    private JLabel buildCardLabel(Card card) {
         JLabel lbl = new JLabel(cardHtml(card), JLabel.CENTER);
         lbl.setPreferredSize(new Dimension(52, 75));
         lbl.setBackground(CARD_BG);
@@ -383,7 +428,8 @@ public class GameGUI extends JFrame {
     }
 
     private JLabel cardSlotLabel(String title) {
-        JLabel lbl = new JLabel("<html><center><font color='#555'>" + title + "<br>card</font></center></html>",
+        JLabel lbl = new JLabel(
+                "<html><center><font color='#555'>" + title + "<br>card</font></center></html>",
                 JLabel.CENTER);
         lbl.setPreferredSize(new Dimension(70, 95));
         lbl.setBackground(new Color(0x0D2818));
@@ -395,18 +441,17 @@ public class GameGUI extends JFrame {
     private String cardHtml(Card c) {
         boolean red = c.getSuit() == Card.Suit.HEARTS || c.getSuit() == Card.Suit.DIAMONDS;
         String color = red ? "#C62828" : "#1A1A2E";
-        String sym = suitSymbol(c.getSuit());
         return "<html><center><font color='" + color + "'>"
-                + "<b>" + c.rank.symbol + "</b><br>" + sym
+                + "<b>" + c.rank.symbol + "</b><br>" + suitSymbol(c.getSuit())
                 + "</font></center></html>";
     }
 
     private String suitSymbol(Card.Suit suit) {
         return switch (suit) {
-            case HEARTS -> "♥";
+            case HEARTS   -> "♥";
             case DIAMONDS -> "♦";
-            case CLUBS -> "♣";
-            case SPADES -> "♠";
+            case CLUBS    -> "♣";
+            case SPADES   -> "♠";
         };
     }
 
