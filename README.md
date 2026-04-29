@@ -6,7 +6,7 @@ A two-player Java card game with a Swing GUI. Play tricks against an AI opponent
 
 ## How to Play
 
-Each round, one player leads by playing a card. The other must follow suit if they can. If they can't, they play any card — but they pick up both cards as a penalty instead of winning the trick. If both players follow suit, the higher card wins the trick. The player who empties their hand first wins.
+Each round, one player leads by playing a card. The other must follow suit if they can. If they can't, they play any card , but they pick up both cards as a penalty instead of winning the trick. If both players follow suit, the higher card wins the trick. The player who empties their hand first wins.
 
 ---
 
