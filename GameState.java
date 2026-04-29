@@ -23,6 +23,8 @@ public class GameState {
     public int computerTricks = 0;
     public int round = 1;
 
+    public Turn lastTrickWinner = null;
+
     public List<String> log = new ArrayList<>();
 
     public GameState(List<Card> playerHand, List<Card> computerHand, Turn firstTurn) {
@@ -34,37 +36,41 @@ public class GameState {
 
     public void playerWins() {
         playerTricks++;
+        lastTrickWinner = Turn.PLAYER;
         currentTurn = Turn.PLAYER;
-        clearPlayedCards();
         round++;
     }
 
     public void computerWins() {
         computerTricks++;
+        lastTrickWinner = Turn.COMPUTER;
         currentTurn = Turn.COMPUTER;
-        clearPlayedCards();
         round++;
     }
 
     public void playerPicksUp() {
-        playerHand.add(playerPlayed);
-        playerHand.add(computerPlayed);
+        if (playerPlayed != null)
+            playerHand.add(playerPlayed);
+        if (computerPlayed != null)
+            playerHand.add(computerPlayed);
+
         Collections.sort(playerHand);
         currentTurn = Turn.COMPUTER;
-        clearPlayedCards();
         round++;
     }
 
     public void computerPicksUp() {
-        computerHand.add(playerPlayed);
-        computerHand.add(computerPlayed);
+        if (playerPlayed != null)
+            computerHand.add(playerPlayed);
+        if (computerPlayed != null)
+            computerHand.add(computerPlayed);
+
         Collections.sort(computerHand);
         currentTurn = Turn.PLAYER;
-        clearPlayedCards();
         round++;
     }
 
-    private void clearPlayedCards() {
+    public void clearPlayedCards() {
         playerPlayed = null;
         computerPlayed = null;
         phase = Phase.LEAD;
@@ -75,10 +81,17 @@ public class GameState {
     }
 
     public Turn getWinner() {
-        if (playerHand.isEmpty())
-            return Turn.PLAYER;
-        if (computerHand.isEmpty())
-            return Turn.COMPUTER;
-        return null;
+        boolean pEmpty = playerHand.isEmpty();
+        boolean cEmpty = computerHand.isEmpty();
+
+        if (pEmpty && cEmpty) {
+            if (playerTricks > computerTricks) return Turn.PLAYER;
+            if (computerTricks > playerTricks) return Turn.COMPUTER;
+            return lastTrickWinner != null ? lastTrickWinner : Turn.PLAYER;
+        }
+
+        if (pEmpty) return Turn.PLAYER;
+        if (cEmpty) return Turn.COMPUTER;
+        return null; 
     }
 }
