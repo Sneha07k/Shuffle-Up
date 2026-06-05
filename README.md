@@ -2,13 +2,13 @@
 
 A two-player Java card game with a Swing GUI. Play tricks against an AI opponent with follow-suit rules and a pick-up mechanic across three difficulty levels.
 
----
+
 
 ## How to Play
 
 Each round, one player leads by playing a card. The other must follow suit if they can. If they can't, they play any card , but they pick up both cards as a penalty instead of winning the trick. If both players follow suit, the higher card wins the trick. The player who empties their hand first wins.
 
----
+
 
 ## Difficulty Levels
 
@@ -18,14 +18,7 @@ Each round, one player leads by playing a card. The other must follow suit if th
 | Medium | Leads high cards, follows suit intelligently |
 | Hard | Tracks seen cards, detects suit weaknesses, scores moves with look-ahead |
 
----
 
-## Requirements
-
-- Java 17 or higher
-- No external dependencies
-
----
 
 ## Running the Game
 
@@ -48,7 +41,7 @@ java GameGUI
 | `Deck.java` | Standard 52-card deck with shuffle and deal |
 | `Difficulty.java` | Difficulty enum |
 
----
+
 
 Screenshots:
 <img width="386" height="172" alt="image" src="https://github.com/user-attachments/assets/373fad39-999c-45ea-807c-35aff8b2db6b" />
